@@ -173,10 +173,10 @@ identifier ( argument list );
 COMMA: ',';
 
 // Lexical Objects
-STRING_LITERAL: '"' (~["\\\r\n] | '\\' .)* '"';
+STRING_LITERAL: '"' ( ~["\\\r\n] | '\\' ["\\bfnrt] )* '"';
 ```
 
-其中 `STRING_LITERAL` 直接内置对转义字符的支持，方便我们后期处理 `\n` 等这样的转义字符。
+其中 `STRING_LITERAL` 直接内置对转义字符的支持，方便我们后期处理 `\n` 等这样的转义字符。（注意这里我们支持了 `\b`, `\f`, `\n`, `\r`, `\t` 等常见转义）。
 
 对于语法规则来说，我们需要理解一个概念—— Expression 和 Statement 的区别：
 
@@ -200,24 +200,39 @@ block
     ;
 ```
 
-也就不言自通了。并且，Statement 可以包含 Expression，定义 Statement 规则的时候就可以是：
+也就不言自通了。
+
+接下来我们定义 `statement`。在我们的设计中，函数调用既可以是语句（比如 `doSomething();`），也可以是表达式（比如 `int a = getSomething();`）。为了支持这两种情况，特别是考虑到 `void` 返回值的函数（它们不能作为表达式的一部分），我们明确地将函数调用作为一种语句类型：
 
 ```antlr
 statement
-    : expression SEMICOLON
+    : functionCall SEMICOLON
+    | expression SEMICOLON
     ;
 ```
 
-Expression 既然定义是可以被求值，那么 Expression 包含 Literals（字面量）也说得通。
+当然，`expression` 本身作为一个语句（表达式语句）也是必须的。
+
+接下来我们定义 `functionCall` 规则，把它单独提取出来是为了复用：
+
+```antlr
+functionCall
+    : IDENTIFIER LPAREN argumentList? RPAREN
+    ;
+```
+
+然后是 `expression`。既然函数调用也可以有返回值（非 `void`），那么它也应该是一个表达式。同时，我们的参数是字符串字面量，字面量当然也是表达式：
 
 ```antlr
 expression
-    : IDENTIFIER LPAREN argumentList? RPAREN
+    : functionCall
     | STRING_LITERAL
     ;
 ```
 
-那么问题来了，为什么函数调用也是表达式呢？这个需要这么理解：
+（注：在完整的语法中 `expression` 会复杂得多，包含各种运算符优先级，这里我们为了实现 Hello World 先简化处理）。
+
+那么问题来了，为什么函数调用既是语句又是表达式呢？这个需要这么理解：
 
 我们上文说了，表达式的定义是：有值、可以嵌套、可以成为表达式语句、可以放在赋值语句右侧，函数调用恰恰满足这些定义，我们来举个例子：
 ```Cpp
@@ -246,9 +261,9 @@ int main() {
 - 在 C++/C#/C/Java 中，`void` 作为一个特殊的类型处理，不可以赋值
 - 在 Rust/Python/TypeScript 中，`void` 可以被赋值，Rust 里作为 `()` 返回，Python 里作为 `None` 返回。
 
-我们的语言设计 `void` 和 C#/Java 很类似，不可以赋值，不可以声明变量，所以我们会把 Function Call 设计为 Function Call Statement 和 Function Call Expression。在这里，我们把它处理为 Function Call Statement。（符号表中这些函数被处理为返回值为 Void）
+我们的语言设计 `void` 和 C#/Java 很类似，不可以赋值，不可以声明变量。为了严谨地处理 `void` 函数调用（即它只能作为语句出现，不能作为表达式参与运算），我们在 `statement` 规则中显式添加了 `functionCall SEMICOLON`。
 
-然后就是参数列表的设计了，我们的语言中参数列表每个都是一个表达式，所以我们的设计是这样的：
+最后是参数列表的设计了，我们的语言中参数列表每个都是一个表达式，所以我们的设计是这样的：
 
 ```antlr
 argumentList
@@ -272,12 +287,12 @@ int main() {
         - 括号：`()`
         - 语句块
             - 左大括号 `{`
-            - 语句 `__builtin_print("Hello World")`
-                - 函数调用表达式
+            - 语句 `__builtin_print("Hello World");`
+                - 函数调用 (`functionCall`)
                     - 标识符 `__builtin_print`
-                    - 左括号 `(`：
-                        - 参数列表：
-                            - 字面量表达式：`Hello World`
+                    - 左括号 `(`
+                    - 参数列表 (`argumentList`)
+                        - 表达式 (`expression`) -> 字面量：`Hello World`
                     - 右括号 `)`
                 - 分号 `;`
             - 右大括号 `}`
