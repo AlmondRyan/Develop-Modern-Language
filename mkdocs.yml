@@ -2,6 +2,9 @@ site_name: 从零开始开发现代编程语言
 nav:
   - 欢迎: index.md
   - 环境配置: 0-Environment-Setup/EnvironmentSetup.md
+  - 编写 Hello World:
+    - 欢迎: 1-Hello-World/Welcome.md
+    - 修改语法: 1-Hello-World/ModifyGrammar.md
 theme: 
   name: material
   language: zh
@@ -20,6 +23,7 @@ theme:
         name: Switch to light mode
   features:
     - content.code.copy
+
 markdown_extensions:
   - footnotes
   - pymdownx.highlight:
@@ -28,6 +32,10 @@ markdown_extensions:
       pygments_lang_class: true
   - pymdownx.inlinehilite
   - pymdownx.snippets
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - admonition
   - pymdownx.details

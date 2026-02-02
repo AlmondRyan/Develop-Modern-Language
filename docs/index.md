@@ -8,6 +8,26 @@
 
 如果你准备好了，那么点击左侧的导航栏，开始配置开发环境吧！希望你能从中学到一些知识，开发出你梦寐以求的编程语言！
 
+## 编译器架构
+
+我们的编译器采取标准架构，也就是：
+```mermaid
+flowchart TD
+    A[Source Code] --> B[ANTLR Lexer/Parser]
+    B -->|Parse Tree| C[AST Builder]
+    C -->|Abstract Syntax Tree| D[Semantic Analyzer]
+    
+    subgraph "Semantic Analyzing"
+        D -->|Iterate 1<br/>Collect Symbol Declaration| E[Symbol Table]
+        E -->|Iterate 2<br/>Type Check| D
+    end
+    
+    D -->|Typed AST| F[IR Generator]
+    F -->|IR| G[VM Code Generator]
+    G -->|Executable ByteCode| H[VM]
+    H -->|Execute| I[Result]
+```
+
 ## Ryntra 语言
 
 ### 基础形式
