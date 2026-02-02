@@ -6,6 +6,7 @@ nav:
     - 欢迎: 1-Hello-World/Welcome.md
     - 修改语法: 1-Hello-World/ModifyGrammar.md
     - AST设计: 1-Hello-World/ASTDesign.md
+    - AST访问和构建: 1-Hello-World/ASTVisitingAndBuilding.md
 theme: 
   name: material
   language: zh
