@@ -8,6 +8,7 @@ nav:
     - AST节点的设计: 1-Hello-World/ASTDesign.md
     - AST的构建: 1-Hello-World/ASTBuilding.md
     - AST的访问: 1-Hello-World/ASTVisiting.md
+    - 符号表的设计: 1-Hello-World/SymbolTable.md
 theme: 
   name: material
   language: zh

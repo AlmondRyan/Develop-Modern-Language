@@ -141,6 +141,8 @@ node.accept(visitor);
 
 我们只需要实现对应节点的 `visit()` 即可，非常方便。
 
-下一章，让我们深入一个新的领域——语义分析，并深入 Visitor 的使用，以及一个简单的 `ErrorHandler` 类。
+****
+
+下一章，让我们深入符号表的创建和使用。
 
 [^1]: 为什么可以从 `IVisitor*` 转换到 `Visitor<StringLiteralNode> *`？需要有一个条件满足：完整对象必须同时派生自 `IVisitor` 和 `Visitor<StringLiteralNode>`，这称作 Cross-Cast
