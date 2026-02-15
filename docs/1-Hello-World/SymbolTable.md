@@ -1,5 +1,7 @@
 # 符号表的设计
 
+> 本文的有关代码在 [这里](https://github.com/AlmondRyan/Ryntra-Project/tree/master/Compiler/Semantic)
+
 我们终于结束了 AST 的旅程！当然不要太开心，接下来每次加入新功能都会重新修改 AST —— 但是没有这么麻烦了！
 
 今天让我们来看一下符号表（Symbol Table）的设计。符号表是我们接下来添加变量系统的根本，没有它，就没有变量、函数等等。

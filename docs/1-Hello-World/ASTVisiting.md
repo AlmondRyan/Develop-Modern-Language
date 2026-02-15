@@ -1,5 +1,7 @@
 # AST 的访问
 
+> 本文的有关代码在 [这里](https://github.com/AlmondRyan/Ryntra-Project/tree/master/Compiler/AST)
+
 我们前面成功的设计了 AST 的节点、构建了属于我们自己的 AST，接下来就是设计一个东西来访问我们的 AST。
 
 ## 非环形访问者模式

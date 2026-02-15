@@ -1,5 +1,7 @@
 # AST 的构建
 
+> 本文的有关代码在 [这里](https://github.com/AlmondRyan/Ryntra-Project/tree/master/Compiler/AST)
+
 有了 AST 节点可不算完成，我们需要一个方法来构建起这棵抽象语法树，那么就是这篇文章的主题：__AST构建__（AST Building）。
 
 ## 工作原理

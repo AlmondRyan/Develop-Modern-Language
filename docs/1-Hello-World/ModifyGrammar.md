@@ -1,5 +1,7 @@
 # 修改语法
 
+> 本文的有关代码在 [这里](https://github.com/AlmondRyan/Ryntra-Project/blob/master/ANTLR/Ryntra.g4)
+
 欢迎来到第一部分。在接下来的内容中，你将会多次看到修改语法这一部分。因为我们每一章都会添加新的语法，并且 ANTLR 的 `.g4` 文件描述了我们的语法，修改它是必须的。
 
 ## 理解现有的语法

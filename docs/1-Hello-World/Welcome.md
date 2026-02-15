@@ -5,7 +5,7 @@
 在这一章结束之后，你的编译器完全可以执行：
 
 ```
-int main() {
+public int main() {
     __builtin_print("Hello World");
 }
 ```

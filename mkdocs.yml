@@ -9,6 +9,8 @@ nav:
     - AST的构建: 1-Hello-World/ASTBuilding.md
     - AST的访问: 1-Hello-World/ASTVisiting.md
     - 符号表的设计: 1-Hello-World/SymbolTable.md
+    - 语义分析: 1-Hello-World/SemanticAnalysis.md
+    - IR设计: 1-Hello-World/IRDesign.md
 theme: 
   name: material
   language: zh

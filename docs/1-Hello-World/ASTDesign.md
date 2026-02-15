@@ -1,5 +1,7 @@
 # AST 节点设计
 
+> 本文的有关代码在 [这里](https://github.com/AlmondRyan/Ryntra-Project/tree/master/Compiler/AST)
+
 欢迎来到 AST 设计部分！
 
 在上一节中，我们已经成功修改了语法文件，让它能够解析我们的 Hello World 程序。
