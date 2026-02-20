@@ -4,6 +4,8 @@
 
 欢迎来到第一部分。在接下来的内容中，你将会多次看到修改语法这一部分。因为我们每一章都会添加新的语法，并且 ANTLR 的 `.g4` 文件描述了我们的语法，修改它是必须的。
 
+****
+
 ## 理解现有的语法
 
 如果你跟着我的环境配置部分一步步走到现在，你应有这样的语法文件：
@@ -162,10 +164,11 @@ int main() {
 ```Ryntra
 public int main() {
     __builtin_print("Hello World!");
+    return 0;
 }
 ```
 
-其实他就是在函数体中添加了一个内置函数调用（解析的时候直接解析为函数调用节点）。函数调用的格式一般情况下为：
+其实他就是在函数体中添加了一个内置函数调用（解析的时候直接解析为函数调用节点）以及一个返回语句。函数调用的格式一般情况下为：
 
 ```
 identifier ( argument list );
@@ -299,11 +302,69 @@ argumentList
 
 这个规则表示参数列表由一个或多个表达式组成，表达式之间用逗号分隔。其中 `?` 表示整个参数列表是可选的（允许零个参数）。
 
-这样，我们重新生成 ANTLR Source，既可正常解析：
+****
+
+接下来来看返回语句，返回语句的格式如下：
+
+```
+return <value>
+```
+
+其中 `return` 是个关键字，`value` 我们暂且只需要支持整数字面量即可。
+
+回到关键字，还是像上文一样，在 `IDENTIFIER` 之上定义关键字防止被识别为标识符：
+
+```antlr
+RETURN: 'return';
+```
+
+整数字面量的正则可以这么写：
+
+```antlr
+INTEGER_LITERAL: [0-9]+;
+```
+
+特别好理解，就是 0~9 的数字可重复无限次，代表整数字面量。
+
+到了语法部分，整数字面量是表达式的一部分，就像字符串字面量一样：
+
+```antlr
+expression
+    : IDENTIFIER LPAREN argumentList? RPAREN # FunctionCall
+    | STRING_LITERAL                         # StringLiteral
+    | INTEGER_LITERAL                        # IntegerLiteral
+    ;
+```
+
+这样，`0` 就可以被解释为 `INTEGER_LITERAL`，进而成为一个 `expression`。
+
+接下来是重头戏，我们需要定义 `return` 语句的语法规则。非常简单，就是关键字 `return` 加上一个表达式，再加上分号：
+
+```antlr
+returnStatement
+    : RETURN expression SEMICOLON
+    ;
+```
+
+定义好了 `return` 语句，别忘了把它加到 `statement` 规则里去，否则解析器可不认它：
+
+```antlr
+statement
+    : expression SEMICOLON
+    | returnStatement
+    ;
+```
+
+现在，所有的拼图都凑齐了！
+
+****
+
+这样，我们重新生成 ANTLR Source，即可正常解析：
 
 ```Ryntra
 public int main() {
     __builtin_print("Hello World!");
+    return 0;
 }
 ```
 

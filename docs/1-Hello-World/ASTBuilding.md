@@ -15,6 +15,7 @@
 ```
 public int main() {
     __builtin_print("Hello World");
+    return 0;
 }
 ```
 
@@ -40,6 +41,12 @@ program
 │   │   │   │   │       └── "Hello World"
 │   │   │   │   └── )
 │   │   │   └── ;
+│   │   ├── statement
+│   │   │   └── returnStatement
+│   │   │   │   ├── return
+│   │   │   │   ├── expression
+│   │   │   │   │   └── 0
+│   │   │   │   └── ;
 │   │   └── }
 └── EOF
 ```
@@ -248,12 +255,29 @@ std::shared_ptr<BlockNode> ASTBuilder::visitBlock(antlr::RyntraParser::BlockCont
 // Declaration...
 
 std::shared_ptr<StatementNode> ASTBuilder::visitStatement(Ryntra::antlr::RyntraParser::StatementContext *ctx) {
-    auto expr = visitExpression(ctx->expression());
-    return createNode<ExpressionStatementNode>(ctx, std::move(expr));
+    if (ctx->returnStatement()) {
+        return visitReturnStatement(ctx->returnStatement());
+    }
+    if (ctx->expression()) {
+        auto expr = visitExpression(ctx->expression());
+        return createNode<ExpressionStatementNode>(ctx, std::move(expr));
+    }
+    return nullptr;
 }
 ```
 
-暂且来说，我们只有 `ExpressionStatement` 这一种，所以我们直接访问其中包裹的 `expression()` 即可，然后创建节点。
+这里我们增加了对 `returnStatement` 的判断。如果存在 `returnStatement` 上下文，我们就访问它；否则，如果存在 `expression` 上下文，我们将其视为表达式语句。
+
+接下来，我们需要实现 `visitReturnStatement`：
+
+```Cpp
+std::shared_ptr<ReturnNode> ASTBuilder::visitReturnStatement(antlr::RyntraParser::ReturnStatementContext *ctx) {
+    auto expr = visitExpression(ctx->expression());
+    return createNode<ReturnNode>(ctx, std::move(expr));
+}
+```
+
+非常简单，获取表达式，创建 `ReturnNode`。
 
 ****
 
@@ -269,13 +293,25 @@ std::shared_ptr<ExpressionNode> ASTBuilder::visitExpression(Ryntra::antlr::Ryntr
     if (auto *strCtx = dynamic_cast<Ryntra::antlr::RyntraParser::StringLiteralContext *>(ctx)) {
         return visitStringLiteral(strCtx);
     }
+    if (auto *intCtx = dynamic_cast<Ryntra::antlr::RyntraParser::IntegerLiteralContext *>(ctx)) {
+        return visitIntegerLiteral(intCtx);
+    }
     return nullptr;
 }
 ```
 
 这里和其他的不同，原因很简单：语法规则写的 expression 是一个选择器，我们需要通过 `dynamic_cast` 获取当前的类型，如果上下文不是 `nullptr`，那么证明匹配上了，就访问对应的节点。
 
-这里是一个标准的 Dispatch（分派）原则。
+这里是一个标准的 Dispatch（分派）原则。别忘了我们新加的 `IntegerLiteral`，也要在这里处理。
+
+```Cpp
+std::shared_ptr<IntegerLiteralNode> ASTBuilder::visitIntegerLiteral(Ryntra::antlr::RyntraParser::IntegerLiteralContext *ctx) {
+    int val = std::stoi(ctx->INTEGER_LITERAL()->getText());
+    return createNode<IntegerLiteralNode>(ctx, val);
+}
+```
+
+`visitIntegerLiteral` 的实现也很直接，获取文本，转换为整数，创建节点。
 
 ****
 

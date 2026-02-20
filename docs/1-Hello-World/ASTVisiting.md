@@ -49,6 +49,8 @@ Visitor 明确需要知道 Concrete Element 的类型这样才能给它生成 `v
 
 此时，Element 不再依赖包含所有 `visit()` 方法的 Visitor，此时只依赖 Visitor 标记接口和他自己对应的子接口，Visitor 接口不再耦合所有的 Element 类型。直接达成目标。
 
+****
+
 ## 基类代码实现
 
 说了这么多，我们直接来看实战。
@@ -59,7 +61,7 @@ Visitor 明确需要知道 Concrete Element 的类型这样才能给它生成 `v
 class IVisitor {
 public:
     virtual ~IVisitor() = default;
-}
+};
 ```
 
 接下来，为每个节点类型生成一个属于自己的访问者接口，注意：**没有继承 `IVisitor`**。
@@ -70,7 +72,7 @@ class Visitor {
 public:
     virtual ~Visitor() = default;
     virtual void visit(T &node) = 0;
-}
+};
 ```
 
 那么此时你可能会问，为什么不继承 `IVisitor`？这是一个非常好的问题：
@@ -82,6 +84,8 @@ public:
 
     任何希望被 `accept()` 接收的访问者必须公开继承 **IVisitor**，否则无法将实例绑定到 `IVisitor &`，导致编译错误。
 
+****
+
 ## `accept()` 的实现
 
 我们在这里举个例子，以 `StringLiteralNode` 的 `accept()` 举例子：
@@ -90,8 +94,6 @@ public:
 void StringLiteralNode::accept(IVisitor &visitor) {
     if (auto *v = dynamic_cast<Visitor<StringLiteralNode> *>(&visitor)) {
         v->visit(*this);
-    } else {
-        throw std::runtime_error("Visitor doesn't support StringLiteralNode");
     }
 }
 ```
@@ -100,7 +102,7 @@ void StringLiteralNode::accept(IVisitor &visitor) {
 
 - 把传入的 `visitor` 交叉转型为 `Visitor<StringLiteralNode> *` [^1]
 - 如果转型成功（该访问者支持处理 `StringLiteralNode`），就调用他的 `visit()` 方法
-- 转型失败抛出异常
+- 如果转型失败，则**静默忽略**。这样做的好处是容错率高，允许访问者只关注它感兴趣的节点，而无需实现所有接口。
 
 其他的 `accept()` 类似，比如 `ProgramNode`：
 
@@ -108,40 +110,109 @@ void StringLiteralNode::accept(IVisitor &visitor) {
 void ProgramNode::accept(IVisitor &visitor) {
     if (auto *v = dynamic_cast<Visitor<ProgramNode> *>(&visitor)) {
         v->visit(*this);
-    } else {
-        throw std::runtime_error("Visitor doesn't support ProgramNode");
     }
 }
 ```
+
+****
+
+## 自动化生成 Visitor
+
+随着我们的语言越来越复杂，AST 节点也越来越多（比如我们刚刚添加了 `ReturnNode` 和 `IntegerLiteralNode`）。如果每一个 Visitor 都要手动继承所有的 `Visitor<T>` 接口，那将是一场噩梦：
+
+1.  需要手动写几十个继承声明
+2.  容易漏掉某个节点类型
+3.  重构时维护成本极高
+
+为了解决这个问题，我们提供了一个脚本 `Scripts/GenAllNodesVisitor/GenAllNodesVisitor.py` 以及节点列表 `Scripts/GenAllNodesVisitor/NodesList.txt`。
+
+`NodesList.txt` 包含了所有的 AST 节点名称：
+
+```text
+TypeSpecifierNode
+StringLiteralNode
+IdentifierNode
+FunctionCallNode
+ExpressionStatementNode
+BlockNode
+FunctionDefinitionNode
+ProgramNode
+ReturnNode
+IntegerLiteralNode
+```
+
+脚本会根据这个列表自动生成 `Compiler/AST/AllNodesVisitor.h`，它大概长这个样子：
+
+```Cpp
+class AllNodesVisitor : public IVisitor,
+                        public Visitor<TypeSpecifierNode>,
+                        public Visitor<StringLiteralNode>,
+                        // ... 其他节点
+                        public Visitor<ReturnNode>,
+                        public Visitor<IntegerLiteralNode>
+{
+public:
+    virtual ~AllNodesVisitor() = default;
+    virtual void visit(TypeSpecifierNode &node) override {}
+    virtual void visit(StringLiteralNode &node) override {}
+    // ... 其他节点的默认空实现
+    virtual void visit(ReturnNode &node) override {}
+    virtual void visit(IntegerLiteralNode &node) override {}
+};
+```
+
+这样，我们只需要继承 `AllNodesVisitor`，就可以轻松地创建一个能够访问所有节点的 Visitor 了。
+
+****
 
 ## 真实样例
 
-讲了这么多理论知识，相信你现在已经跃跃欲试了，但是现在还不着急着手制作语义分析，我们先来实现一个简单的 `PrintVisitor`，接受 `IdentifierNode` 和 `StringLiteralNode`：
+现在，让我们利用 `AllNodesVisitor` 来实现一个简单的 AST 打印器，它能够处理我们需要的新节点 `ReturnNode` 和 `IntegerLiteralNode`。
 
 ```Cpp
-class PrintVisitor : public IVisitor,
-                     public Visitor<IdentifierNode>,
-                     public Visitor<StringLiteralNode> {
+class ASTPrinter : public AllNodesVisitor {
 public:
-    void visit(IdentifierNode &node) override {
-        std::cout << "Identifier Node: " << node.getName() << std::endl;
+    // 处理程序节点
+    void visit(ProgramNode &node) override {
+        std::cout << "ProgramNode" << std::endl;
+        // 递归访问子节点
+        for (auto &func : node.getFunctions()) {
+            func->accept(*this);
+        }
     }
 
-    void visit(StringLiteralNode &node) override {
-        std::cout << "String Literal Node: " << node.getValue() << std::endl;
+    // 处理返回语句
+    void visit(ReturnNode &node) override {
+        std::cout << "Return Statement" << std::endl;
+        if (node.getValue()) {
+            std::cout << "  Value: ";
+            node.getValue()->accept(*this);
+        }
     }
-}
+
+    // 处理整数常量
+    void visit(IntegerLiteralNode &node) override {
+        std::cout << "Integer Literal: " << node.getValue() << std::endl;
+    }
+
+    // 处理字符串常量
+    void visit(StringLiteralNode &node) override {
+        std::cout << "String Literal: " << node.getValue() << std::endl;
+    }
+    
+    // ... 其他节点的处理
+};
 ```
 
-调用也非常简单：
+调用方式依旧简单：
 
 ```Cpp
-StringLiteralNode node("HELLO WORLD");
-PrintVisitor visitor;
-node.accept(visitor);
+// 假设 root 是我们构建好的 AST 根节点
+ASTPrinter printer;
+root->accept(printer);
 ```
 
-我们只需要实现对应节点的 `visit()` 即可，非常方便。
+通过这种方式，我们可以非常方便地扩展我们的编译器功能（比如语义分析、代码生成），而不需要修改现有的 AST 结构。
 
 ****
 

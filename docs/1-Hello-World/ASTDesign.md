@@ -20,6 +20,7 @@
 ```
 public int main() {
     __builtin_print("Hello World");
+    return 0;
 }
 ```
 
@@ -33,8 +34,10 @@ public int main() {
     - 函数体
 - 函数体是一系列语句（Statement）
 - 其中一条语句是表达式语句（Expression Statement）
-- 这个表达式是一个函数调用（Function Call）
-- 调用的参数是一个字符串字面量（String Literal）
+    - 这个表达式是一个函数调用（Function Call）
+    - 调用的参数是一个字符串字面量（String Literal）
+- 另一条语句是返回语句（Return Statement）
+    - 返回的值是一个整数字面量（Integer Literal）
 
 基于这个层次结构，我们自顶向下构建我们的 AST 节点。
 
@@ -224,6 +227,23 @@ private:
 };
 ```
 
+## 整数字面量节点设计
+
+```Cpp
+class IntegerLiteralNode : public ExpressionNode {
+public:
+    IntegerLiteralNode(int value) : value(value) {}
+    
+    int getValue() const { 
+        return value; 
+    }
+    
+    // ... accept & toString ...
+private:
+    int value;
+};
+```
+
 ## 标识符节点设计
 
 ```Cpp
@@ -284,6 +304,24 @@ public:
     // ... accept & toString ...
 private:
     std::shared_ptr<ExpressionNode> expression;
+};
+```
+
+## 返回语句节点设计
+
+```Cpp
+class ReturnNode : public StatementNode {
+public:
+    ReturnNode(std::shared_ptr<ExpressionNode> value) : 
+               value(std::move(value)) {}
+
+    std::shared_ptr<ExpressionNode> getValue() const { 
+        return value; 
+    }
+
+    // ... accept & toString ...
+private:
+    std::shared_ptr<ExpressionNode> value;
 };
 ```
 

@@ -175,6 +175,8 @@ if __name__ == '__main__':
 
 当调用的时候，它会自动生成一个统一的 C++ 接口，省去了我们一个一个写的难题。
 
+这个代码相当难看，但是嘛，机器生成咱要什么自行车。
+
 ## 工作原理
 
 语义分析器的核心工作就是遍历 AST，检查代码是否符合语言的规则。它继承自 `AllNodesVisitor`，并持有一个我们上一章讲过的 `SymbolTable`。
@@ -313,6 +315,75 @@ void SemanticAnalyzer::visit(BlockNode &node) {
 
 别忘了，进入大括号之前要推入一个新的作用域，离开的时候弹出。
 
+## 引入 TypedAST
+
+你可能会问：“我们在语义分析里查了半天，查出来的类型信息去哪了？难道就为了报个错吗？”
+
+如果后端（生成代码的时候）不知道 `a + b` 里的 `a` 和 `b` 是整数还是字符串，它怎么生成指令呢？难道再查一遍符号表？
+
+当然不！为了把这些宝贵的类型信息传递给后端，我们引入了 TypedAST。
+
+### 类型系统 (TypeSystem)
+
+首先，我们需要一套类型系统来描述我们的语言里有哪些类型。我们在 `TypeSystem.h` 里定义了它：
+
+```Cpp
+enum class TypeKind {
+    PRIMITIVE,  // 原始类型，如 int, string
+    FUNCTION,   // 函数类型
+    VOID,       // void
+    UNKNOWN     // 未知类型（出错时用）
+};
+
+class Type {
+public:
+    virtual ~Type() = default;
+    virtual TypeKind getKind() const = 0;
+    virtual std::string toString() const = 0;
+    virtual bool equals(const Type& other) const = 0;
+};
+```
+
+这就很清晰了，我们有基础类型（`PrimitiveType`）、函数类型（`FunctionType`）等等。
+
+### TypedAST 的结构
+
+有了类型定义，TypedAST 就很好办了。它和我们之前的 AST 长得很像，但是所有的**表达式节点**都多了一个属性——`Type`。
+
+来看看 `TypedAST.h` 里的定义：
+
+```Cpp
+// 所有的 TypedAST 节点都继承自它
+class ITypedASTNode {
+public:
+    virtual ~ITypedASTNode() = default;
+    virtual void accept(ITypedVisitor &visitor) = 0;
+    // ...
+};
+
+// 表达式节点，核心在于携带了类型信息
+class TypedExpressionNode : public ITypedASTNode {
+public:
+    explicit TypedExpressionNode(std::shared_ptr<Type> type) : type(std::move(type)) {}
+    std::shared_ptr<Type> getType() const { return type; }
+    
+protected:
+    std::shared_ptr<Type> type;
+};
+```
+
+这样，当我们分析完 `a = 10` 时，我们生成的不再是一个普通的赋值节点，而是一个“左边是int类型的a，右边是int类型的10”的节点。而对于 `TypedStatementNode`，虽然它没有值类型，但它依然保留了结构，方便后续生成代码。
+
+### 为什么不直接改原来的 AST？
+
+这是一个架构洁癖的问题。
+
+1.  职责分离：Parser 生成的 AST 反映的是“代码长什么样”，而 TypedAST 反映的是“代码是什么意思”。
+2.  不可变性：我们希望 Parser 生成的 AST 是不可变的，这样如果以后要做 IDE 功能（比如重构、高亮），原始 AST 还是纯净的。
+3.  后端便利：后端拿到 TypedAST 后，不需要再做任何类型推导，直接照着类型生成指令就行了。
+
+所以，现在的 `SemanticAnalyzer` 其实是一个 Transformer（转换器），它吃进去 AST，吐出来 TypedAST。
+
 ## 小结
 
 到目前为止，我们的语义分析器已经能做不少事情了：
@@ -322,4 +393,4 @@ void SemanticAnalyzer::visit(BlockNode &node) {
 3.  它能对内置函数的参数进行严格的类型检查。
 4.  它能利用 `ErrorHandler` 优雅地报告错误，而不是直接崩溃。
 
-接下来，就是最让人感到开心的两部分——IR和VM。
+接下来，就是最让人感到开心、也是最让人崩溃的两部分——IR和VM。
