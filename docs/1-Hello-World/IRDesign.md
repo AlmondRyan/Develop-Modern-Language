@@ -4,160 +4,163 @@
 
 欢迎来到特别重要的一节！（其实每一节都特别重要，都是强耦合的）
 
-在这节中，我们将探讨一个事—— IR 的设计。先提前说一下，我们设计的是：
+如果说编译器是程序的翻译官，那 IR（Intermediate Representation，中间表示）就是翻译官脑海中的思考语言。它既不是源代码，也不是目标代码，而是一个精心设计的中间形态，承载着各种优化和转换。
 
-- 高层IR：SSA（Static Single Assignment）样式
-- 底层IR：类汇编、类三地址码的IR
+在这节中，我们将探讨一个事 —— IR 的设计，而并非 IR 的构建，那是下一章的事。
 
-本节不讨论 IR 生成（`IRBuilder`）等内容，只把重点放在 IR 的设计。
+这一节的定义非常的多，让我们开始吧。
 
-## 高层 IR（SSA IR）
+## 两个核心概念 —— SSA 和 GC
 
-### Hello World 例子
+在了解我们的 IR 设计之前，必须先来了解一下 SSA（Static Single Assignment，静态单赋值）和 GC（Garbage Collection，垃圾回收）。
 
+### SSA
+
+在传统的编程语言中，变量可以多次赋值，比如说：
 ```
-declare __builtin_print(string) -> void
-
-global @str1 : string = "Hello World"
-
-define @main() -> i32 {
-entry:
-    %0 = call __builtin_print(@str1)
-    ret 0
-}
+x = 1
+x = x + 2
+x = 5
 ```
 
-整个 IR 分为三个部分：
+在这种代码中，`x` 代表不同的值，取决于程序执行到哪一行，这对数据流分析产生了很大的麻烦。
 
-- `declare` 部分：用于声明外部函数，也就是给多文件编译留一个口子，比如用到了其他地方的函数可以在这里 `declare` 声明，就像是 C++ 的前向声明
-- `global` 部分：用于声明全局常量，如果数字是介于 16 位 `int` 的情况，我们把它直接优化为立即数而非常量，如果超出了 16 位 int，默认放到常量池
-- `define` 部分：用于声明函数（实现在当前 Translation Unit 内），默认要求每个函数必须存在 `entry:` 标签作为函数入口，程序入口查找 `define @main`
+那么我们引入了 SSA，在 SSA 中：
 
-`@` 开头的是标识符（如果是有名的变量/常量，则会用名称；无名常量会用类型缩写+id），而 `%` 开头的是寄存器。
+- 每个变量只能被定义（赋值）一次
+- 如果一个逻辑变量需要多次赋值，会把变量重命名为多个不同的版本
 
-让我们来一个一个看：
-
-#### `declare` 部分
-
-`declare` 部分 **只能** 声明外部函数和内置函数，我给你举个例子：
-
+那么上面的代码转到 SSA 就是这样：
 ```
-// Algorithm.rynt
-declare(package) Algorithm; // 这里以后会有的，嗯对会有的
-public int add(int a, int b) {
-    return a + b;
-}
-
-// main.rynt
-declare(package) Main;
-import Algorithm;
-public int main() {
-    int result = add(3, 4);
-}
+x1 = 1
+x2 = x1 + 2
+x3 = 5
 ```
 
-这里，`main.rynt` 使用了 `add` 函数，但是 `add` 函数的定义并不在这里，所以我们要声明外部函数来告诉后端的字节码生成调用这个函数。生成的 IR 是这个样子的：
+看到了吗？现在每个变量名都唯一对应一个具体的值，这使得定义-使用链（Use-Def Chain）变得特别直接，因为任何地方的变量使用都指向唯一的定义点。
 
-```
-declare add(i32, i32) -> i32
+其实 SSA 还有一个更重要的函数 Phi 函数，我们会在控制流部分详细的讲。
 
-define @main() -> i32 {
-entry:
-    %0 = call add(3, 4)
-    ret 0
-}
-```
+### GC
 
-#### `global` 部分
+GC（Garbage Collection）是我们的语言运行时的重要组件。IR 的设计需要为 GC 提供足够的信息，比如：哪些变量是对象引用？哪些指令可能触发 GC？这些信息将在代码生成时转化为精确的栈图（StackMap），让 GC 能够安全、准确地回收内存。
 
-`global` 部分对应的就是常量池，这里面声明的所有东西都会进入 VM 的常量池，还是看上文，整数超出 16 位 `int` 范围和其他的都会进入常量池。
+## 我们的 IR - Ryntra SSA IR
 
-标准的格式是这样的：
+现在，让我们来看看我们的 IR 具体长什么样。设计目标是：既要能表达高级语言的特性，又要为优化和代码生成提供足够的信息，同时还要考虑实现的复杂度。
 
-```
-global @name : type = value
-```
+### 类型系统
 
-举个例子，你定义了 `string a = "abc"`，IR 将会转存到：
+类型系统是 IR 的基础。我们的设计相当细致：
 
-```
-global @a : string = "abc"
-```
-
-#### `define` 部分
-
-`define` 部分，非常明显的是定义函数的地方。每个函数的定义是：
-
-```
-define @name(argumentList) -> returnType {
-label:
-    content
-}
+```ebnf
+type ::=
+        void
+        | i1 | i8 | i16 | i32 | i64 | f32 | f64
+        | string         // 字符串引用，由 GC 管理
+        | class <name>   // 类引用，由 GC 管理
+        | struct <name>  // 结构体，值类型
+        | array <type>   // 数组引用，由 GC 管理
+        | ptr <type>     // 临时内部指针，有严格的生命周期限制
+        | fn(<type>*) -> <type>
 ```
 
-其中：
+有几点需要特别注意：
 
-- `@name` 还是那个
-- `argumentList` 指的是参数列表，但是没有名字只有类型
-- `returnType` 是函数的返回类型
-- `label` 是标签，用于区分基本块。每个函数必定会有一个 `entry` 标签，用于查找函数入口。
-- `content` 是实际的代码
+- 泛型：每个泛型进入 IR 的时候都会被消除，举个例子：进入的时候是 `List<T>` 其中传入的是 `int`，在 IR 的时候会被识别为 `List<int>`，IR 中不包含泛型参数
+- 指针：`ptr <type>` 是一种特殊的指令类型，用于优化连续的字段访问，但是他不可以跨越 SafePoint（可能触发 GC 的点，比如函数调用、对象分配）。如果在这些点之后调用 `ptr`，如果 GC 一发生，对象被移动，指针即刻失效。所以 VM 必须保证 `ptr` 在 SafePoint 之后重新计算。 
 
-## 底层 IR（Assembly IR）
+### 值系统
 
-高层 IR 虽然很好，但是对于虚拟机来说还是太高级了（尤其是那一堆 SSA 形式的寄存器 `%0`, `%1`...）。为了让虚拟机跑得更顺畅，我们需要把它再“降级”一次，变成更接近机器指令的底层 IR。
+我们的 IR 支持两种类型的值：
 
-你可以把它理解为汇编语言，或者 Java 的字节码。
+1. SSA 虚拟寄存器: `%1`, `%a` - 这些是编译器内部使用的临时变量，就像是我们举例子的 `x1`, `x2`
+2. 字面量: `1`, `3.14`, `null` - 这些是编译时常量
 
-### Hello World 例子
+### 指令系统
 
-让我们看看刚才那个 Hello World 降级之后变成了什么样（参考 `HelloWorld.rir`）：
+我们的指令系统分为几个类别，每个类别都有明确的语义和约束：
 
+#### 纯值运算
+
+> 纯值运算没有副作用
+
+这些指令不产生副作用，可以进行各种优化：
 ```
-section .cdata
-    string @str1 = "Hello World"
-
-section .code
-_entry:
-    func @main() -> i32 {
-        load_const @str1
-        syscall 0
-        ret 0
-    }
+add, sub, mul, div, rem  // 算术运算（加减乘除取余）
+and, or, xor, shl, shr   // 位运算（与或异或左右移）
+cmp [eq|ne|gt|ge|lt|le]  // 比较运算
+neg, not                 // 一元运算
+cast <type>              // 类型转换
 ```
 
-这就非常有意思了！它变成了基于栈（Stack-Based）的指令集（虽然我们这里看起来像是直接操作寄存器或者栈顶，但其实更接近栈机）。
+#### 内存与对象操作
 
-### 为什么要有这个 IR？
+**所有修改堆内存的操作都隐含写屏障 (Write Barrier)。**
 
-你可能会问：为什么不直接解释执行高层 IR？
+什么是写屏障？就像是在程序中的一段钩子代码，每当应用程序试图修改对象引用（就是写操作）的时候，这段代码自动触发执行。目的是通知 GC：“注意！对象的引用关系发生了变化，请记录或处理这个变化，以保证 GC 的正确性。”
 
-1.  消除 SSA：高层 IR 里的 SSA 形式虽然对优化很友好，但执行起来很麻烦（还要搞 Phi 节点什么的）。底层 IR 把它变成了线性的指令序列。
-2.  指令选择：高层 IR 的 `call __builtin_print` 被翻译成了更具体的 `syscall 0`。这意味着我们可以在这一层做针对特定平台的指令选择。
-3.  内存布局：你看它分成了 `.cdata`（常量数据段）和 `.code`（代码段），这已经非常接近可执行文件的结构了。
+```
+// 读取对象字段，如果对象为 null 则触发 Panic
+%val = load_field %obj, field_index
 
-### 结构解析
+// 写入对象字段，如果写入的是引用类型，必须触发写屏障
+store_field %obj, field_index, %val
 
-#### `section .cdata`
+// 数组操作类似，带有边界检查
+%val = load_elem %arr, %index
+store_elem %arr, %index, %val
+```
 
-这里存放所有的静态数据，比如字符串常量、全局变量等。这和高层 IR 的 `global` 部分很像，但更纯粹——只存数据。
+这里还有一个特殊的指针操作指令：
 
-#### `section .code`
+```
+// 用于紧凑的局部操作，但切记：不能跨 SafePoint 使用！
+%ptr = gep %base, index...
+%val = load %ptr
+store %ptr, %val
+```
 
-这里是真正的代码指令。
+#### 对象管理
 
-- `_entry:`：程序的入口标签。
-- `func @main ...`：函数定义的开始。
-- `load_const @str1`：把常量 `@str1` 加载到栈顶（或者寄存器）。
-- `syscall 0`：执行系统调用。在这里，0 号系统调用对应 `print`。这就把高层的函数调用变成了底层的系统指令。
-- `ret 0`：函数返回。
+所有分配指令都是 SafePoint，可能触发 GC。因此，每个分配点都必须生成 StackMap，记录当前活跃的引用变量。
 
-### 设计思路
+```
+// 分配对象
+%obj = new <class_name>
 
-从高层 IR 到底层 IR 的转换过程，其实就是编译器后端的主要工作：
+// 分配数组
+%arr = new_array <type>, %len
+```
 
-1.  指令选择 (Instruction Selection)：比如把 `call __builtin_print` 映射到 `syscall 0`。
-2.  寄存器分配 (Register Allocation)：虽然我们的 VM 是栈式的（或者说无限寄存器），对于栈机来说，就是把操作数压栈、弹栈。
-3.  布局 (Layout)：确定代码和数据在内存中的位置。
+#### 函数调用
 
-这个设计虽然简单，但麻雀虽小五脏俱全，涵盖了编译器后端最核心的概念。
+无论常规调用还是可能抛出异常的调用，都是 SafePoint：
+
+> `unwind` 就是：每次发生异常的时候都会向上退出调用栈，直到找到一个被处理的 `catch` 之类的块，每次退出一层调用栈都要清理一些资源，这个过程就叫做栈展开（Stack Unwinding）
+
+```
+// 常规调用
+%ret = call @func(%args...)
+
+// 可能抛出异常的调用，需要指定正常和异常分支
+%ret = invoke @func(%args...) to label_normal unwind label_unwind
+```
+
+#### 5. 控制流 (Loop SafePoints)
+
+对于循环，我们需要在回边（Backedge）处插入 Poll 点，确保长时间运行的循环能够响应 GC 请求：
+
+```
+br label                                // 无条件跳转
+cond_br %cond, label_true, label_false  // 条件跳转
+ret %val                                // 函数返回
+```
+
+## 总结
+
+我们的 IR 设计是一个平衡了表达力、优化能力和实现复杂度的产物。它既要能够表达高级语言的所有特性，又要为后续的优化和代码生成提供足够的信息。
+
+在下一章中，我们将具体实现这个 IR 系统，包括如何构建 IR、如何遍历 IR、以及如何进行简单的优化。
+
+记住：好的 IR 设计是编译器成功的一半！

@@ -99,6 +99,8 @@ private:
 
 ## 统一的 Visitor 接口
 
+> 这里前文说过，并给出了输入和输出但没有源码，这里给出源码
+
 解决了错误处理器之后，接下来我们来解决继承问题。
 
 我们在 AST 访问章节说过，我们用的是 Acyclic Visitor，也就是继承必须手动写出所有的继承类型。那对于我们这种特殊的需求（必须继承全部节点类型），而且懒人来说，什么东西最简单呢？
@@ -254,6 +256,36 @@ for (const auto &func : node.getFunctions()) {
 
 的模式。
 
+### 分析函数定义
+
+`visit(FunctionDefinitionNode)` 是连接函数声明和函数体的桥梁。它的主要职责是设置“当前正在分析的函数上下文”，以便函数体内部的语句（特别是 `return` 语句）知道自己身处何处。
+
+```Cpp
+void SemanticAnalyzer::visit(FunctionDefinitionNode &node) {
+    // 1. 解析返回类型
+    node.getReturnType()->accept(*this);
+    currentFunctionReturnType = lastType; // 记录当前函数的返回类型，供 ReturnNode 使用
+
+    // 2. 进入作用域
+    symbolTable.enterScope();
+
+    // 3. 分析函数体
+    node.getBody()->accept(*this);
+    auto typedBody = std::dynamic_pointer_cast<TypedBlockNode>(lastNode);
+
+    // 4. 退出作用域
+    symbolTable.exitScope();
+
+    // 5. 特殊检查：main 函数必须有返回值
+    if (node.getName()->getName() == "main") {
+        // ... 检查 typedBody 中是否有 ReturnNode ...
+    }
+    
+    // 6. 清除上下文
+    currentFunctionReturnType = nullptr;
+}
+```
+
 ### 分析字符串字面量
 
 由于字符串字面量内部没有任何需要检查的东西（至少，转义字符会在 AST 生成的时候就转成对应的转义字符），所以我们这里留空。
@@ -314,6 +346,33 @@ void SemanticAnalyzer::visit(BlockNode &node) {
 ```
 
 别忘了，进入大括号之前要推入一个新的作用域，离开的时候弹出。
+
+### 分析返回语句
+
+`visit(ReturnNode)` 是我们类型检查的另一个重镇。它需要确保函数返回的值类型与函数声明的返回类型一致。
+
+```Cpp
+void SemanticAnalyzer::visit(ReturnNode &node) {
+    // 1. 分析返回值表达式
+    node.getValue()->accept(*this);
+    auto typedExpr = std::dynamic_pointer_cast<TypedExpressionNode>(lastNode);
+
+    // 2. 检查类型是否匹配
+    if (currentFunctionReturnType) {
+        std::string expected = currentFunctionReturnType->toString();
+        std::string actual = typedExpr->getType()->toString();
+        
+        if (expected != actual && actual != "unknown") {
+             ErrorHandler::getInstance().makeError("Return type mismatch: expected " + expected + ", but got " + actual, node.getLocation());
+        }
+    }
+    
+    // 3. 生成 TypedAST
+    auto typedReturn = std::make_shared<TypedReturnNode>(typedExpr);
+    typedReturn->setLocation(node.getLocation());
+    lastNode = typedReturn;
+}
+```
 
 ## 引入 TypedAST
 
