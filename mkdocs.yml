@@ -11,6 +11,8 @@ nav:
     - 符号表的设计: 1-Hello-World/SymbolTable.md
     - 语义分析: 1-Hello-World/SemanticAnalysis.md
     - IR设计: 1-Hello-World/IRDesign.md
+    - IR构建: 1-Hello-World/IRBuilding.md
+    - 虚拟机和编译流程: 1-Hello-World/VM.md
 theme: 
   name: material
   language: zh
