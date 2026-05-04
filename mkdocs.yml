@@ -10,9 +10,10 @@ nav:
     - AST的访问: 1-Hello-World/ASTVisiting.md
     - 符号表的设计: 1-Hello-World/SymbolTable.md
     - 语义分析: 1-Hello-World/SemanticAnalysis.md
-    - IR设计: 1-Hello-World/IRDesign.md
-    - IR构建: 1-Hello-World/IRBuilding.md
-    - 虚拟机和编译流程: 1-Hello-World/VM.md
+    - IR: 1-Hello-World/IR.md
+    - VM: 1-Hello-World/VM.md
+  - int 变量:
+    - 修改语法和修改 AST: 2-Integer-Var-Declaration/ModifyGrammarAST.md
 theme: 
   name: material
   language: zh
